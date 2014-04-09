@@ -67,12 +67,8 @@ module Jekyll
 
   end
 
-  module TagFilters
-    def site
-      @context.registers[:site]
-    end
-    
-    def tag_cloud
+  module TagFilters    
+    def tag_cloud(site)
       active_tag_data.map { |tag, set|
         tag_link(tag, tag_url(tag), :class => "set-#{set}")
       }.join(' ')
@@ -84,16 +80,16 @@ module Jekyll
     end
 
     def tag_url(tag)
-      File.join('', site.config["tag_dir"], ERB::Util.u(tag))      
+      File.join('', @context.registers[:site].config["tag_dir"], ERB::Util.u(tag))      
     end
 
     def tags(obj = nil)
       tags = obj ? obj["tags"]-ignored_tags : active_tags
-      tags.map {|e|tag_link(e, tag_url(e), :rel => 'tag')}.join(', ')
+      tags.map {|e|tag_link(e, tag_url(e), :rel => 'tag')}.join(' ')
     end
 
     def active_tag_data
-      site.config["tag_data"].reject { |tag, set| ignored_tags.include? tag }
+      @context.registers[:site].config["tag_data"].reject { |tag, set| ignored_tags.include? tag }
     end
     
     def active_tags
@@ -101,7 +97,7 @@ module Jekyll
     end
 
     def ignored_tags
-      site.config["ignored_tags"]||[]
+      @context.registers[:site].config["ignored_tags"]||[]
     end
   end
 

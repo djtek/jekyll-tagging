@@ -3,50 +3,44 @@ require 'erb'
 
 module Jekyll
 
+  class TagPage < Page
+
+    def initialize(site, base, dir, tag)
+      @site = site
+      @base = base
+      @dir = dir
+      @name = 'index.html'
+
+      self.process(@name)
+      self.read_yaml(File.join(base, '_layouts'), 'tag_index.html')
+      self.data['tag'] = tag
+
+      tag_title_prefix = site.config['tag_title_prefix'] || 'Tag: '
+      self.data['title'] = "#{tag_title_prefix}#{tag}"
+      self.data['posts'] = site.tags[tag]
+    end
+  end
+
   class Tagger < Generator
 
     safe true
-
     attr_accessor :site
 
-    @types = [:page, :feed]
-
-    class << self; attr_accessor :types, :site; end
-
     def generate(site)
-      self.class.site = self.site = site
-
-      generate_tag_pages
-      add_tag_cloud
+      @site = site
+      if site.layouts.key? 'tag_index'
+        dir = site.config['tag_dir'] || 'tags'
+        site.tags.keys.each do |tag|
+          site.pages << TagPage.new(site, site.source, File.join(dir, tag), tag)
+        end
+        add_tag_cloud
+      end
     end
 
     private
-
-    # Generates a page per tag and adds them to all the pages of +site+.
-    # A <tt>tag_page_layout</tt> have to be defined in your <tt>_config.yml</tt>
-    # to use this.
-    def generate_tag_pages
-      active_tags.each { |tag, posts| new_tag(tag, posts) }
-    end
-
-    def new_tag(tag, posts)
-      self.class.types.each { |type|
-        if layout = site.config["tag_#{type}_layout"]
-          data = { 'layout' => layout, 'posts' => posts.sort.reverse! }
-
-          name = yield data if block_given?
-
-          site.pages << TagPage.new(
-            site, site.source, site.config["tag_#{type}_dir"],
-            "#{name || tag}#{site.layouts[data['layout']].ext}", data
-          )
-        end
-      }
-    end
-
     def add_tag_cloud(num = 5, name = 'tag_data')
-      s, t = site, { name => calculate_tag_cloud(num) }
-      s.respond_to?(:add_payload) ? s.add_payload(t) : s.config.update(t)
+      t = { name => calculate_tag_cloud(num) }
+      site.respond_to?(:add_payload) ? site.add_payload(t) : site.config.update(t)
     end
 
     # Calculates the css class of every tag for a tag cloud. The possible
@@ -73,26 +67,12 @@ module Jekyll
 
   end
 
-  class TagPage < Page
-
-    def initialize(site, base, dir, name, data = {})
-      self.content = data.delete('content') || ''
-      self.data    = data
-
-      super(site, base, dir[-1, 1] == '/' ? dir : '/' + dir, name)
-
-      data['tag'] ||= basename
+  module TagFilters
+    def site
+      @context.registers[:site]
     end
-
-    def read_yaml(*)
-      # Do nothing
-    end
-
-  end
-
-  module Filters
-
-    def tag_cloud(site)
+    
+    def tag_cloud
       active_tag_data.map { |tag, set|
         tag_link(tag, tag_url(tag), :class => "set-#{set}")
       }.join(' ')
@@ -103,22 +83,27 @@ module Jekyll
       %Q{<a href="#{url}"#{html_opts}>#{tag}</a>}
     end
 
-    def tag_url(tag, type = :page, site = Tagger.site)
-      url = File.join('', site.config["tag_#{type}_dir"], ERB::Util.u(tag))
-      site.permalink_style == :pretty ? url : url << '.html'
+    def tag_url(tag)
+      File.join('', site.config["tag_dir"], ERB::Util.u(tag))      
     end
 
-    def tags(obj)
-      tags = obj['tags'].dup
-      tags.map! { |t| t.first } if tags.first.is_a?(Array)
-      tags.map! { |t| tag_link(t, tag_url(t), :rel => 'tag') if t.is_a?(String) }.compact!
-      tags.join(', ')
+    def tags(obj = nil)
+      tags = obj ? obj["tags"]-ignored_tags : active_tags
+      tags.map {|e|tag_link(e, tag_url(e), :rel => 'tag')}.join(', ')
     end
 
-    def active_tag_data(site = Tagger.site)
-      return site.config['tag_data'] unless site.config["ignored_tags"]
-      site.config["tag_data"].reject { |tag, set| site.config["ignored_tags"].include? tag }
+    def active_tag_data
+      site.config["tag_data"].reject { |tag, set| ignored_tags.include? tag }
+    end
+    
+    def active_tags
+      active_tag_data.map {|e| e[0]}
+    end
+
+    def ignored_tags
+      site.config["ignored_tags"]||[]
     end
   end
 
 end
+Liquid::Template.register_filter(Jekyll::TagFilters)
